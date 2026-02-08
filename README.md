@@ -1,76 +1,122 @@
-# Emby-Cloudflare-Workers-Proxy
-一个基于Cloudflare Workers的Emby反代工具，支持WebSocket实时功能、黑名单控制，仅需拼接目标Emby地址即可一键反代，适配个人Emby服务器的远程访问需求。
+# 🎬 Emby-Cloudflare-Proxy (Universal & Cached)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/your-username/Emby-Cloudflare-Proxy?style=social)](https://github.com/your-username/Emby-Cloudflare-Proxy)
 
+一个基于 Cloudflare Workers / Pages 的 Emby & Jellyfin 全能反向代理工具。  
+它不仅能加速你的 Emby 远程访问，还内置了**智能图片缓存**（海报墙秒开）和**隐身安全模式**（防扫描）。只需一次部署，即可代理任意服务器。
 
-## ✨ 功能特性
-- 支持HTTP/HTTPS协议的Emby服务器反代
-- 完整WebSocket支持：保障Emby收藏、追新、播放同步等实时功能
-- 黑名单控制：仅屏蔽指定域名，无需手动添加白名单，配置更省心
-- 自动端口识别：支持默认端口（443/80）省略、非默认端口（如8096）显式拼接
-- 跨域兼容：适配Emby Web/客户端的跨域访问需求
-- 重定向自动处理：目标服务器重定向请求自动转换为Worker地址
+## ✨ 核心特性
+| 特性 | 说明 |
+|------|------|
+| ⚡ 极速海报墙缓存 | 自动识别 Emby/Jellyfin 海报、封面图等静态资源，CDN 边缘缓存大幅提升加载速度，降低源站带宽压力 |
+| 🛡️ 隐身安全模式 | 强制拦截 `*.workers.dev` / `*.pages.dev` 默认域名访问，仅支持自定义域名，防止恶意扫描 |
+| 🌐 万能通用架构 | 拼接 URL 即可代理任意服务器（`https://你的域名/https://目标IP`），无需修改代码 |
+| 📡 完整 WebSocket 支持 | 完美兼容 Emby 远程控制、实时通知、播放状态同步等核心功能 |
+| 🤖 多平台部署 | 支持 Cloudflare Workers / Pages 部署，兼容 GitHub Actions 自动更新 |
 
+## 🚀 部署指南 (三选一)
+### 方式 A：一键部署 (推荐给 Workers 用户)
+点击下方按钮，直接将代码部署到你的 Cloudflare 账号：  
+> ⚠️ 注意：需将链接中的 `YOUR_GITHUB_USERNAME` 和 `YOUR_REPO_NAME` 替换为你的 GitHub 用户名/仓库名。部署后**必须绑定自定义域名**，否则无法访问。
 
-## 🚀 部署指南（Cloudflare Workers）
-1. 登录 [Cloudflare 控制台](https://dash.cloudflare.com/)，进入「Workers & Pages」
-2. 点击「创建应用程序」→「创建Worker」，输入Worker名称后点击「部署」
-3. 部署完成后，点击「编辑代码」，删除默认代码，粘贴本项目的 [worker.js](worker.js) 代码
-4. （可选）修改代码中 `BLOCKED_DOMAINS` 数组，添加需要屏蔽的域名（留空则不屏蔽）
-5. 点击「保存并部署」，获取Worker域名（如 `your-emby-proxy.workers.dev`）
+```markdown
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lijboys/EmbyProxy)
+```
 
+### 方式 B：Cloudflare Pages 部署 (推荐，更稳定)
+1. Fork 本仓库到你的 GitHub 账号；
+2. 登录 [Cloudflare Dashboard](https://dash.cloudflare.com/)，进入「Workers & Pages」；
+3. 点击「Create Application → Pages → Connect to Git」；
+4. 选择你 Fork 的仓库，配置如下（**关键**）：
+   | 配置项 | 值 |
+   |--------|-----|
+   | Framework preset | None |
+   | Build command | (留空) |
+   | Build output directory | (留空) |
+5. 点击「Save and Deploy」，等待部署完成。
 
-## ⚙️ 配置说明
-代码中仅需修改以下配置项（位于代码顶部）：
+### 方式 C：GitHub Actions (自动同步更新)
+适合需要修改代码后自动部署的场景：
+1. 在 Cloudflare 获取以下信息：
+   - `CF_API_TOKEN`：需授予「编辑 Workers/Pages」权限的 API 令牌（[生成地址](https://dash.cloudflare.com/profile/api-tokens)）；
+   - `CF_ACCOUNT_ID`：Cloudflare 账户 ID（控制台右上角「我的个人资料」→「账户ID」）；
+2. 进入 GitHub 仓库 →「Settings → Secrets and variables → Actions」，添加上述两个密钥；
+3. 修改代码并提交到仓库，Actions 会自动触发部署流程。
+
+## ⚙️ 关键配置 (重要)
+### 1. 绑定自定义域名 (必做)
+为了安全，项目默认禁止 Cloudflare 分配的默认域名（如 `xxx.workers.dev`/`xxx.pages.dev`）访问，**必须绑定自定义域名**：
+- **Workers**：进入 Worker →「Settings → Triggers → Add Custom Domain」，填写你的域名（如 `emby.mysite.com`）；
+- **Pages**：进入 Pages 项目 →「Custom domains → Set up a custom domain」，填写你的域名并完成 DNS 解析。
+
+### 2. 代码配置项 (可选)
+打开 `_worker.js` 文件，修改顶部的配置参数（建议保持默认）：
 ```javascript
-// 黑名单：禁止反代的域名，留空则不屏蔽任何域名
+// 是否开启图片缓存？(建议 true，海报墙加速核心)
+const ENABLE_IMAGE_CACHE = true; 
+
+// 默认域名拦截的提示语
+const BLOCK_MSG = 'Access Denied: Please use custom domain.';
+
+// 可选：添加黑名单域名（禁止代理的服务器）
 const BLOCKED_DOMAINS = [
-  'malicious.com', // 示例：需屏蔽的域名
-  'spam-emby.com'
+  // 'malicious.com' // 取消注释并添加需屏蔽的域名
 ];
 ```
 
-
 ## 📖 使用方法
-在Worker域名后直接拼接目标Emby服务器地址（含协议、域名/IP、端口）：
+部署并绑定自定义域名后，按以下格式拼接 URL 访问 Emby/Jellyfin：
 ```
-https://你的Worker域名/https://你的Emby域名:端口
+https://你的自定义域名/目标Emby服务器地址
 ```
 
 ### 示例
-- Emby使用默认HTTPS端口（443）：
-  ```
-  https://your-emby-proxy.workers.dev/https://emby.yourdomain.com
-  ```
-- Emby使用非默认端口（如8096）：
-  ```
-  https://your-emby-proxy.workers.dev/https://emby.yourdomain.com:8096
-  ```
+| 配置项 | 内容 |
+|--------|------|
+| 你的自定义域名 | `https://emby.mysite.com` |
+| 目标 Emby 地址 | `http://emby.公益.xyz:8096` |
+| 最终访问地址 | `https://emby.mysite.com/http://emby.公益.xyz:8096` |
 
+将最终地址填入 Emby 客户端（Infuse/浏览器/TV 端）即可正常使用。
 
-## ❓ 常见问题
-### 1. 报错「521: Web server is down」
-- 直接访问目标Emby地址，确认服务器是否正常启动
-- 检查Emby端口是否被防火墙/安全组放行
-- 确认Worker访问格式的协议（HTTP/HTTPS）与Emby服务器一致
+## ❓ 常见问题 (FAQ)
+<details>
+<summary>Q1: 打开网页显示 "Access Denied: Please use custom domain"？</summary>
+这是正常的安全保护机制，你正在使用 Cloudflare 默认域名（如 xxx.workers.dev）访问。请在 Cloudflare 后台绑定自定义域名（如 emby.yourdomain.com），并使用新域名访问。
+</details>
 
+<details>
+<summary>Q2: 能播放，但海报加载还是慢？</summary>
+1. 确认代码中 `ENABLE_IMAGE_CACHE = true`；<br>
+2. CDN 缓存为「热缓存」：第一次访问需回源拉取（稍慢），第二次及后续访问会直接从 CDN 读取（秒开）；<br>
+3. 多刷新几次海报墙，让 CDN 完成缓存预热。
+</details>
 
-### 2. 播放视频卡顿/速度慢
-- 降低Emby客户端的「远程播放质量」（如1080P→720P）
-- 开启Emby服务器的硬件转码功能
-- 更换Cloudflare优选节点（调整自定义域的CNAME指向）
-- 在Worker代码中添加静态资源缓存（参考项目Issues中的缓存配置）
+<details>
+<summary>Q3: 支持 HTTPS 的 Emby 服务器吗？</summary>
+完全支持。直接将 HTTPS 地址拼接到自定义域名后即可，示例：<br>
+`https://emby.mysite.com/https://emby.secure-server.com:8920`
+</details>
 
+<details>
+<summary>Q4: 每天有多少流量限制？</summary>
+Cloudflare Workers 免费版限制：<br>
+- 每日请求数：100,000 次<br>
+- 每日出站带宽：10GB<br>
+对于个人使用（每天几部电影 + 刷海报墙）完全够用，无需担心超限。
+</details>
 
-### 3. WebSocket功能失效
-- 确认代码中已包含WebSocket处理逻辑（本项目默认支持）
-- 检查Emby服务器是否开启WebSocket服务（Emby默认开启）
-
+<details>
+<summary>Q5: WebSocket 功能失效（通知/播放同步异常）？</summary>
+1. 确认代码中包含 WebSocket 处理逻辑（本项目默认集成）；<br>
+2. 检查自定义域名的 DNS 解析是否为「Proxied」（云朵图标点亮）；<br>
+3. 清除客户端缓存后重新连接服务器。
+</details>
 
 ## ⚠️ 免责声明
-- 本工具仅用于**个人合法拥有的Emby服务器远程访问**
-- 禁止使用本工具访问未经授权、侵权的Emby资源，或绕过合法的地域/访问限制
-- 使用者需遵守所在地区法律法规及Cloudflare、Emby的服务协议
-
+- 本项目仅供学习交流使用，请勿用于商业或非法用途；
+- 使用本工具产生的流量费用、法律责任均由使用者自行承担；
+- 请严格遵守 Cloudflare 服务协议及目标 Emby/Jellyfin 服务器的使用规则。
 
 ## 📄 许可证
-MIT License
+本项目基于 MIT 协议开源 - 详见 [LICENSE](LICENSE) 文件。
