@@ -17,11 +17,12 @@
 ## 🚀 部署指南 (三选一)
 ### 方式 A：一键部署 (推荐给 Workers 用户)
 点击下方按钮，直接将代码部署到你的 Cloudflare 账号：  
-> ⚠️ 注意：需将链接中的 `YOUR_GITHUB_USERNAME` 和 `YOUR_REPO_NAME` 替换为你的 GitHub 用户名/仓库名。部署后**必须绑定自定义域名**，否则无法访问。
 
-```markdown
 [![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/lijboys/EmbyProxy)
-```
+
+部署 CF Worker：
+   - 在 CF Worker 控制台中创建一个新的 Worker。
+   - 将 [worker.js](https://github.com/lijboys/EmbyProxy/blob/main/_worker.js) 的内容粘贴到 Worker 编辑器中。
 
 ### 方式 B：Cloudflare Pages 部署 (推荐，更稳定)
 1. Fork 本仓库到你的 GitHub 账号；
