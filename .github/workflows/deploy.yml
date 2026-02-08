@@ -1,0 +1,21 @@
+name: Deploy to Cloudflare Workers
+
+on:
+  push:
+    branches:
+      - main  
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    name: Deploy
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Deploy to Cloudflare Workers
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          # 你的 Worker 名字，如果不填默认会用仓库名
+          command: deploy _worker.js --name emby-proxy --compatibility-date 2024-01-01
