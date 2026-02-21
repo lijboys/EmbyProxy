@@ -1,10 +1,10 @@
 // ===================== 配置区域 =====================
-const ENABLE_IMAGE_CACHE = true; // 开启图片强制缓存
-const ENABLE_API_CACHE = true;   // 开启 API 丝滑微缓存
-const API_CACHE_TTL = 10;        // API 缓存时间(秒)，建议 5-10
+const ENABLE_IMAGE_CACHE = true; // 开启强力图片缓存 (海报秒开)
+const ENABLE_API_CACHE = true;   // 开启 API 丝滑微缓存 (解决转圈圈)
+const API_CACHE_TTL = 10;        // API 缓存时间(秒)
 // ====================================================
 
-// --- 新增：首页伪装 HTML 内容 (一比一还原你的截图) ---
+// --- 首页伪装 HTML 内容 (防扫描利器) ---
 const HOME_PAGE_HTML = `
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -46,13 +46,12 @@ const HOME_PAGE_HTML = `
 </html>
 `;
 
-// 匹配 Emby 的静态图片路径 (强制缓存 1 年)
+// 正则匹配规则
 const STATIC_REGEX = /(\.(jpg|jpeg|png|gif|svg|webp)|(\/Images\/(Primary|Backdrop|Logo|Thumb|Banner|Art)))/i;
-// 匹配慢速加载的 API (微缓存解决转圈圈)
 const API_CACHE_REGEX = /(\/Items\/Resume|\/Users\/.*\/Items)/i;
-// 匹配视频流路径 (绝对不缓存，防止 CF 报错断流)
 const VIDEO_REGEX = /(\/Videos\/|\/Items\/.*\/Download|\/Items\/.*\/Stream)/i;
 
+// 使用现代 ES 模块语法
 export default {
   async fetch(request, env, ctx) {
     return handleRequest(request, ctx);
@@ -62,7 +61,7 @@ export default {
 async function handleRequest(request, ctx) {
   const url = new URL(request.url);
 
-  // 1. CORS 处理 (允许跨域)
+  // 1. 跨域 OPTIONS 处理
   if (request.method === 'OPTIONS') {
     return new Response(null, {
       headers: {
@@ -74,32 +73,48 @@ async function handleRequest(request, ctx) {
     });
   }
 
-  // 2. 解析你拼接的动态目标地址
+  // 2. 目标地址解析与伪装页拦截
   const targetPath = url.pathname.slice(1) + url.search;
   
-  // [黑科技]：如果没有带后缀目标地址，或者格式明显不对，直接返回伪装的 HTML 引导页
   if (!targetPath || targetPath === '/' || !targetPath.includes('.')) {
-    // 自动把 HTML 里的 CURRENT_HOST 替换成你当前的 CF 域名
     const html = HOME_PAGE_HTML.replaceAll('CURRENT_HOST', url.host);
     return new Response(html, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
   }
 
-  // [黑科技]：智能补全协议 (兼容直接写 域名:端口 的情况)
-  let finalTargetStr = targetPath;
-  if (!finalTargetStr.startsWith('http')) {
-    finalTargetStr = 'http://' + finalTargetStr;
-  }
-
+  let finalTargetStr = targetPath.startsWith('http') ? targetPath : 'http://' + targetPath;
   let targetUrl;
   try {
     targetUrl = new URL(finalTargetStr);
   } catch(e) {
-    // 如果别人瞎填导致解析报错了，也不要抛出任何文字异常，继续弹首页，死不承认自己是个反代
     const html = HOME_PAGE_HTML.replaceAll('CURRENT_HOST', url.host);
     return new Response(html, { headers: { 'Content-Type': 'text/html;charset=UTF-8' } });
   }
 
-  // 3. 构建新的请求头，伪装成直接访问服务器
+  // ==========================================
+  // 3. WebSocket 专属处理逻辑 (融合了你老代码的精髓)
+  // ==========================================
+  if (request.headers.get('Upgrade') === 'websocket') {
+    const wsProtocol = targetUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsTargetUrl = `${wsProtocol}//${targetUrl.host}${targetUrl.pathname}${targetUrl.search}`;
+    const clientSocket = new WebSocketPair();
+    const [client, server] = Object.values(clientSocket);
+
+    try {
+      const targetSocket = new WebSocket(wsTargetUrl);
+      targetSocket.accept();
+      targetSocket.addEventListener('message', event => server.send(event.data));
+      server.addEventListener('message', event => targetSocket.send(event.data));
+      targetSocket.addEventListener('close', event => server.close(event.code, event.reason));
+      server.addEventListener('close', event => targetSocket.close(event.code, event.reason));
+      targetSocket.addEventListener('error', e => server.close(1011, e.message));
+      server.addEventListener('error', e => targetSocket.close(1011, e.message));
+    } catch (e) {
+      return new Response(null, { status: 500 });
+    }
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  // 4. 构建普通 HTTP 请求头 (防盗链与真实IP透传)
   const newHeaders = new Headers(request.headers);
   newHeaders.set('Host', targetUrl.host);
   newHeaders.set('X-Forwarded-For', request.headers.get('CF-Connecting-IP'));
@@ -113,59 +128,47 @@ async function handleRequest(request, ctx) {
     redirect: 'manual' 
   });
 
-  // 判断当前请求属于什么类型
   const isImage = STATIC_REGEX.test(targetUrl.pathname);
   const isApiCacheable = API_CACHE_REGEX.test(targetUrl.pathname);
   const isVideo = VIDEO_REGEX.test(targetUrl.pathname);
   const isGetReq = request.method === 'GET';
 
-  // 4. 尝试从 CF 边缘节点读取缓存
+  // 5. 读缓存
   const cache = caches.default;
   if ((isImage && ENABLE_IMAGE_CACHE) || (isApiCacheable && ENABLE_API_CACHE)) {
     if (isGetReq) {
       const cachedResponse = await cache.match(newRequest);
-      if (cachedResponse) {
-        return cachedResponse; // 命中缓存，瞬间返回！
-      }
+      if (cachedResponse) return cachedResponse; 
     }
   }
 
-  // 5. 没命中缓存，老老实实去源服务器请求数据
+  // 6. 回源请求与写缓存 (暴力缓存机制)
   try {
     const response = await fetch(newRequest);
     const resHeaders = new Headers(response.headers);
     resHeaders.set('Access-Control-Allow-Origin', '*'); 
 
-    // 视频流特殊处理：打死不缓存，且强制关闭连接防止卡死
     if (isVideo) {
       resHeaders.set('Connection', 'close');
       return new Response(response.body, { status: response.status, headers: resHeaders });
     }
 
-    // 6. 拿到数据后，如果是图片或 API，暴力改写响应头，强行塞进 CF 缓存里
     if (response.status === 200 && isGetReq) {
-      
       if (isImage && ENABLE_IMAGE_CACHE) {
-        // 图片：删掉不让缓存的头，强行缓存 1 年
         resHeaders.set('Cache-Control', 'public, max-age=31536000, immutable');
         resHeaders.delete('Pragma');
         resHeaders.delete('Expires');
-        
         const responseToCache = new Response(response.body, { status: response.status, headers: resHeaders });
         ctx.waitUntil(cache.put(newRequest, responseToCache.clone()));
         return responseToCache;
-        
       } else if (isApiCacheable && ENABLE_API_CACHE) {
-        // API：强行缓存 10 秒
         resHeaders.set('Cache-Control', `public, max-age=${API_CACHE_TTL}`);
-        
         const responseToCache = new Response(response.body, { status: response.status, headers: resHeaders });
         ctx.waitUntil(cache.put(newRequest, responseToCache.clone()));
         return responseToCache;
       }
     }
 
-    // 普通请求（比如网页 HTML、登录请求等），直接放行
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
